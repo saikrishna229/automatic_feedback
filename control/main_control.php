@@ -6,6 +6,9 @@ class Index extends Controller {
 		require_once 'model/index_Model.php';
 		$this->index_model=new Index_Model();
 		$this->login['error']['invalid']=0;
+		if(empty($_SESSION)){
+			$this->clear_session();
+		}
 	}
 	
 	
@@ -36,7 +39,8 @@ class Index extends Controller {
 		$this->app_details=$this->index_model->get_app_status($id);
 		if(!empty($this->app_details))
 		{
-			echo "<pre>"; print_r($this->app_details); echo "</pre>";
+			//echo "<pre>"; print_r($this->app_details); echo "</pre>";
+			return $this->app_details;
 		}
 	}
 	function get_latest_jobs()
@@ -63,14 +67,35 @@ class Index extends Controller {
 		$_SESSION['User_id']=NULL;
 		$_SESSION['type']=NULL;
 	}
+	function verify_email($value)
+	{
+		$value_login= $this->index_model->check_login_records($value);
+		if(empty($value_login)){
+			return "no-email";
+		}
+		else{
+			return "email-exist";
+		}
+	}
+	function add_user_acc($value){
+		$responce=$this->verify_email($value);
+		if($responce=="no-email"){
+
+			$this->index_model->add_acc($value);
+			$this->verify_login($value);
+			return "done";
+		}
+		return "error";
+		
+	}
 	function verify_login($value)
 	{
 		$value_login= $this->index_model->check_login_records($value);
 		if(empty($value_login)){
-			$this->login['error']['invalid']=1;
+			$this->login['error']['invalid']=2;
 		}
 		else{
-			echo '<pre>'; print_r($value_login); echo '</pre>';
+			//echo '<pre>'; print_r($value_login); echo '</pre>';
 			if($value_login[0]['password']==$value['password'])
 			{
 				$_SESSION['User_id']=$value_login[0]['user_id'];
@@ -84,7 +109,45 @@ class Index extends Controller {
 			}
 		}
 	}
+	function requireToVar($file,$username,$companyname,$jobname,$template,$free_comment){
+	    ob_start();
+	    require($file);
+	    return ob_get_clean();
+	}
+	function send_mail($todata)
+	{
+		$comp_app_data=$this->get_app_details($todata['app_id']);
 
+		$username=$comp_app_data['0']['user_details']['full_name'];
+		$companyname=$comp_app_data['0']['job_details']['company_name'];
+		$jobname=$comp_app_data['0']['job_details']['title'];
+		//$template="reject";
+		//$template="next_round";
+		$template=$comp_app_data['0']['responce'];
+		$free_comment=$comp_app_data['0']['comments'];
+		$email_temp=$this->requireToVar('view/email-templates.html',$username,$companyname,$jobname,$template,$free_comment);
+		$to_email_address="snaroju545@gmail.com";//$comp_app_data['0']['user_details']['email']
+		$to_name="Shravan";//$comp_app_data['0']['user_details']['full_name']
+		$message=$email_temp;
+		//$headers = 'From: noreply @ happytech . com';
+		//echo $email_temp;
+		$this->php_gmail_mailer($to_email_address,$to_name,$message);
+		//mail($to_email_address,$subject,$message,$header);
+		//$this->redirect("http://localhost/automatic_feedback/index.php");
+	}
+
+	function update_app($data)
+	{
+		$id['application_id']=$data['app_id'];
+		$data_update = array(
+     		'responce' =>$data['Template_select'],
+     		'comments' =>$data['free_comment'],
+     		'responce_time' =>date("Y-m-d H:i:s")
+     	);
+		$this->app_details=$this->index_model->update_app_status($id,$data_update);
+		if($data['Template_select']!='wait')
+		$this->send_mail($data);
+	}
 	function redirect($url, $permanent = false)
 	{
 	    header('Location: ' . $url, true, $permanent ? 301 : 302);
